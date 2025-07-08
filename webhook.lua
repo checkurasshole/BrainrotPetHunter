@@ -23,36 +23,26 @@ local function sendWebhookWithRetry(data, retries)
 end
 
 local function createDiscordEmbed(foundPets, totalFinds, petDetails)
-    local petsFoundList = {}
-    for brainrotName, instances in pairs(foundPets) do
-        if #instances > 0 then
-            table.insert(petsFoundList, {
-                name = brainrotName,
-                value = string.format('**%d found**', #instances),
-                inline = true,
-            })
+    -- Initialize pet details text
+    local petDetailsText = ""
+    if petDetails and next(petDetails) then
+        for _, entry in pairs(petDetails) do
+            local info = entry.info
+            petDetailsText = petDetailsText .. string.format(
+                "**%s** (x%d)\n📊 Gen: %s | 🧬 Mut: %s | 💰 %s | 🎖️ %s\n\n",
+                info.DisplayName,
+                entry.count,
+                info.Generation,
+                info.Mutation,
+                info.Price,
+                info.Rarity
+            )
         end
     end
 
-    -- Add pet details if available
-    local petDetailsText = ""
-    if petDetails and next(petDetails) then
-        local detailCount = 0
-        for _, entry in pairs(petDetails) do
-            if detailCount < 5 then -- Limit to first 5 unique pets
-                local info = entry.info
-                petDetailsText = petDetailsText .. string.format(
-                    "**%s** (x%d)\n📊 Gen: %s | 🧬 Mut: %s | 💰 %s | 🎖️ %s\n\n",
-                    info.DisplayName,
-                    entry.count,
-                    info.Generation,
-                    info.Mutation,
-                    info.Price,
-                    info.Rarity
-                )
-                detailCount = detailCount + 1
-            end
-        end
+    -- Ensure petDetailsText does not exceed Discord field limit (1000 characters)
+    if #petDetailsText > 1000 then
+        petDetailsText = petDetailsText:sub(1, 950) .. "... (Truncated)"
     end
 
     local embed = {
@@ -82,23 +72,6 @@ local function createDiscordEmbed(foundPets, totalFinds, petDetails)
         table.insert(embed.fields, {
             name = '🐾 **Pet Details**',
             value = petDetailsText,
-            inline = false,
-        })
-    end
-
-    local maxPetFields = math.min(#petsFoundList, 15)
-    for i = 1, maxPetFields do
-        table.insert(embed.fields, petsFoundList[i])
-    end
-
-    if #petsFoundList > 15 then
-        local remainingPets = {}
-        for i = 16, #petsFoundList do
-            table.insert(remainingPets, petsFoundList[i].name)
-        end
-        table.insert(embed.fields, {
-            name = '➕ **Additional Pets**',
-            value = table.concat(remainingPets, ', '),
             inline = false,
         })
     end
