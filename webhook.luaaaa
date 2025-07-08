@@ -2,16 +2,13 @@
 local function sendWebhookWithRetry(data, retries)
     retries = retries or 0
     local success, response = pcall(function()
-        return http_request({
-            Url = config.webhookUrl,
-            Method = 'POST',
-            Headers = {
-                ['Content-Type'] = 'application/json',
-            },
-            Body = HttpService:JSONEncode(data),
-        })
+        return HttpService:PostAsync(
+            config.webhookUrl,
+            HttpService:JSONEncode(data),
+            Enum.HttpContentType.ApplicationJson
+        )
     end)
-    if success and response.StatusCode == 204 then
+    if success and (response == "" or response:find("204")) then
         return true
     elseif retries < MAX_RETRIES then
         wait(RETRY_DELAY)
@@ -25,7 +22,7 @@ end
 local function createDiscordEmbed(foundPets, totalFinds, petDetails)
     local petsFoundList = {}
     for brainrotName, instances in pairs(foundPets) do
-        if #instances > 0 then
+        if #instances > 0 and config.petToggles[brainrotName] then
             table.insert(petsFoundList, {
                 name = brainrotName,
                 value = string.format('**%d found**', #instances),
@@ -39,7 +36,7 @@ local function createDiscordEmbed(foundPets, totalFinds, petDetails)
     if petDetails and next(petDetails) then
         local detailCount = 0
         for _, entry in pairs(petDetails) do
-            if detailCount < 5 then -- Limit to first 5 unique pets
+            if detailCount < 5 and config.petToggles[entry.info.DisplayName] then -- Limit to first 5 unique pets
                 local info = entry.info
                 petDetailsText = petDetailsText .. string.format(
                     "**%s** (x%d)\n📊 Gen: %s | 🧬 Mut: %s | 💰 %s | 🎖️ %s\n\n",
