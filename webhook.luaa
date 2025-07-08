@@ -23,29 +23,8 @@ local function sendWebhookWithRetry(data, retries)
 end
 
 local function createDiscordEmbed(foundPets, totalFinds, petDetails)
-    -- Initialize pet details text
-    local petDetailsText = ""
-    if petDetails and next(petDetails) then
-        for _, entry in pairs(petDetails) do
-            local info = entry.info
-            petDetailsText = petDetailsText .. string.format(
-                "**%s** (x%d)\n📊 Gen: %s | 🧬 Mut: %s | 💰 %s | 🎖️ %s\n\n",
-                info.DisplayName,
-                entry.count,
-                info.Generation,
-                info.Mutation,
-                info.Price,
-                info.Rarity
-            )
-        end
-    end
-
-    -- Ensure petDetailsText does not exceed Discord field limit (1000 characters)
-    if #petDetailsText > 1000 then
-        petDetailsText = petDetailsText:sub(1, 950) .. "... (Truncated)"
-    end
-
-    local embed = {
+    local embeds = {}
+    local currentEmbed = {
         title = '🎯 **TARGET ACQUIRED!**',
         description = string.format('**%d Brainrot Pets Found!**', totalFinds),
         color = 16711935,
@@ -66,17 +45,55 @@ local function createDiscordEmbed(foundPets, totalFinds, petDetails)
         },
         timestamp = os.date('!%Y-%m-%dT%H:%M:%SZ'),
     }
+    local fieldCount = 1 -- Start with 1 for the Location Info field
 
-    -- Add pet details field if available
-    if petDetailsText ~= "" then
-        table.insert(embed.fields, {
-            name = '🐾 **Pet Details**',
-            value = petDetailsText,
-            inline = false,
-        })
+    -- Add pet details
+    local petDetailsList = {}
+    if petDetails and next(petDetails) then
+        for _, entry in pairs(petDetails) do
+            local info = entry.info
+            local petText = string.format(
+                "**%s** (x%d)\n📊 Gen: %s | 🧬 Mut: %s | 💰 %s | 🎖️ %s",
+                info.DisplayName,
+                entry.count,
+                info.Generation,
+                info.Mutation,
+                info.Price,
+                info.Rarity
+            )
+            table.insert(petDetailsList, {
+                name = string.format('🐾 %s', info.DisplayName),
+                value = petText,
+                inline = true,
+            })
+        end
     end
 
-    return embed
+    -- Add pet details to embeds, splitting if necessary
+    for _, petField in ipairs(petDetailsList) do
+        if fieldCount >= 25 then
+            -- Start a new embed
+            table.insert(embeds, currentEmbed)
+            currentEmbed = {
+                title = '🎯 **TARGET ACQUIRED! (Continued)**',
+                description = string.format('**%d Brainrot Pets Found (Continued)!**', totalFinds),
+                color = 16711935,
+                fields = {},
+                footer = {
+                    text = string.format('🔍 Session: %d scans | 📊 Total finds: %d | 🎯 Place ID: %s', sessionStats.scans, sessionStats.totalFinds, PLACE_ID),
+                },
+                timestamp = os.date('!%Y-%m-%dT%H:%M:%SZ'),
+            }
+            fieldCount = 0
+        end
+        table.insert(currentEmbed.fields, petField)
+        fieldCount = fieldCount + 1
+    end
+
+    -- Add the final embed
+    table.insert(embeds, currentEmbed)
+
+    return embeds
 end
 
 local function sendConsolidatedWebhook(foundPets, totalFinds, petDetails)
@@ -84,11 +101,11 @@ local function sendConsolidatedWebhook(foundPets, totalFinds, petDetails)
         return
     end
 
-    local embed = createDiscordEmbed(foundPets, totalFinds, petDetails)
+    local embeds = createDiscordEmbed(foundPets, totalFinds, petDetails)
 
     local data = {
         content = string.format('🚨 **Found %d pets!** 🚨', totalFinds),
-        embeds = { embed },
+        embeds = embeds,
         username = 'Brainrot Hunter v2.1',
         avatar_url = 'https://cdn.discordapp.com/emojis/1234567890123456789.png',
     }
