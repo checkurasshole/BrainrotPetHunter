@@ -9,17 +9,19 @@ local function performScan(forceSend)
     local petDetails = PetDetailsModule.getPetDetails()
 
     for _, brainrotName in pairs(brainrots) do
-        local instances = ESPModule.findAllBrainrotInstances(brainrotName)
-        if #instances > 0 then
-            foundPets[brainrotName] = instances
-            totalFinds = totalFinds + #instances
-            local lastCount = lastScanResults[brainrotName] or 0
-            if #instances > lastCount then
-                hasNewFinds = true
+        if config.petToggles[brainrotName] then
+            local instances = ESPModule.findAllBrainrotInstances(brainrotName)
+            if #instances > 0 then
+                foundPets[brainrotName] = instances
+                totalFinds = totalFinds + #instances
+                local lastCount = lastScanResults[brainrotName] or 0
+                if #instances > lastCount then
+                    hasNewFinds = true
+                end
+                lastScanResults[brainrotName] = #instances
+            else
+                lastScanResults[brainrotName] = 0
             end
-            lastScanResults[brainrotName] = #instances
-        else
-            lastScanResults[brainrotName] = 0
         end
     end
 
