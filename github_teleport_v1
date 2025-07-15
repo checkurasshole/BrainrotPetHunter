@@ -1,3 +1,4 @@
+-- Roblox Teleport V1 Script
 local Players = game:GetService('Players')
 local RunService = game:GetService('RunService')
 local TweenService = game:GetService('TweenService')
@@ -434,6 +435,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     end
 end)
 
--- Execute with enhanced safety delay
-task.wait(1)
-safeTeleport()
+return {
+    safeTeleport = safeTeleport,
+    EmergencyReset = EmergencyReset
+}
