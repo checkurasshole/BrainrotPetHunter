@@ -1,0 +1,439 @@
+local Players = game:GetService('Players')
+local RunService = game:GetService('RunService')
+local TweenService = game:GetService('TweenService')
+local UserInputService = game:GetService('UserInputService')
+local ReplicatedStorage = game:GetService('ReplicatedStorage')
+
+local player = Players.LocalPlayer
+local random = Random.new()
+
+-- SAFETY ADDITIONS - Death prevention system
+local SAFETY_ENABLED = true
+local originalHealth = nil
+local deathPrevention = false
+local emergencyPosition = nil
+local characterRestored = false
+
+-- Enhanced character/HRP handling
+local function getHRP()
+    local char = player.Character or player.CharacterAdded:Wait()
+    local humanoid = char:WaitForChild('Humanoid', 5)
+    local hrp = char:WaitForChild('HumanoidRootPart', 5)
+
+    if SAFETY_ENABLED and not characterRestored then
+        emergencyPosition = hrp.CFrame
+        originalHealth = humanoid.Health
+    end
+
+    return hrp
+end
+
+local hrp = getHRP()
+
+-- Stealth teleport parameters
+local tpSettings = {
+    baseAmount = 45,
+    maxAmount = 120,
+    minAmount = 20,
+    voidTeleports = 2,
+    finalTeleports = 6,
+    randomOffset = 0.005,
+    stealthDelay = 0.02,
+    chunkSize = 8,
+}
+
+-- IMPROVED VOID SYSTEM - Multiple void levels
+local voidLevels = {
+    CFrame.new(0, -1000, 0),
+    CFrame.new(0, -2000, 0),
+    CFrame.new(0, -5000, 0),
+    CFrame.new(0, -10000, 0),
+}
+
+-- Enhanced ping-based teleport calculation
+local function calculateTeleportAmount()
+    local ping = player:GetNetworkPing() * 1000
+    local fps = 1 / RunService.Heartbeat:Wait()
+    local pingFactor = math.clamp(ping * 0.6, 15, 100)
+    local fpsFactor = math.clamp(60 / fps, 0.7, 1.5)
+    return math.clamp(
+        math.floor(pingFactor * fpsFactor),
+        tpSettings.minAmount,
+        tpSettings.maxAmount
+    )
+end
+
+-- Dynamic teleport amount updates
+local currentTpAmount = tpSettings.baseAmount
+task.spawn(function()
+    while true do
+        currentTpAmount = calculateTeleportAmount()
+        task.wait(0.2)
+    end
+end)
+
+-- SAFETY ADDITION - Health monitoring system
+local function StartDeathPrevention()
+    if not SAFETY_ENABLED then
+        return
+    end
+    deathPrevention = true
+    local humanoid = player.Character
+        and player.Character:FindFirstChild('Humanoid')
+    if not humanoid then
+        return
+    end
+    originalHealth = humanoid.Health
+
+    local healthConnection
+    healthConnection = RunService.Heartbeat:Connect(function()
+        if not deathPrevention then
+            healthConnection:Disconnect()
+            return
+        end
+        if humanoid.Health <= 0 or humanoid.Health < originalHealth * 0.1 then
+            if emergencyPosition then
+                hrp.CFrame = emergencyPosition
+                humanoid.Health = originalHealth
+            end
+        end
+    end)
+end
+
+local function StopDeathPrevention()
+    deathPrevention = false
+end
+
+-- SAFETY ADDITION - Position validation
+local function IsSafePosition(position)
+    if not SAFETY_ENABLED then
+        return true
+    end
+    if position.Y <= -1000 then
+        return true
+    end
+    if emergencyPosition then
+        local distance = (position - emergencyPosition.Position).Magnitude
+        if distance > 5000 then
+            return false
+        end
+    end
+    return true
+end
+
+-- Enhanced teleport function with anti-detection
+local teleporting = false
+local lastTeleportTime = 0
+local originalPosition = nil
+
+-- Anti-detection void strategy
+local function getRandomVoidPosition()
+    local level = voidLevels[random:NextInteger(1, #voidLevels)]
+    local offset = Vector3.new(
+        random:NextNumber(-100, 100),
+        random:NextNumber(-50, 50),
+        random:NextNumber(-100, 100)
+    )
+    return level + offset
+end
+
+-- Enhanced TP function with micro-delays and randomization
+local function TP(position, bypass, isVoid)
+    if teleporting and not bypass then
+        return false
+    end
+    local currentTime = tick()
+    if currentTime - lastTeleportTime < 0.005 then
+        task.wait(0.005)
+    end
+    teleporting = true
+    lastTeleportTime = currentTime
+    pcall(function()
+        if typeof(position) == 'CFrame' then
+            if not IsSafePosition(position.Position) and not isVoid then
+                if emergencyPosition then
+                    position = emergencyPosition
+                end
+            end
+            local offset = Vector3.new(
+                random:NextNumber(
+                    -tpSettings.randomOffset,
+                    tpSettings.randomOffset
+                ),
+                random:NextNumber(
+                    -tpSettings.randomOffset,
+                    tpSettings.randomOffset
+                ),
+                random:NextNumber(
+                    -tpSettings.randomOffset,
+                    tpSettings.randomOffset
+                )
+            )
+            hrp.CFrame = position + offset
+            hrp.Velocity = Vector3.new(0, 0, 0)
+            hrp.RotVelocity = Vector3.new(0, 0, 0)
+            if isVoid then
+                hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+            end
+        end
+    end)
+    if isVoid then
+        task.wait(0.01)
+    else
+        RunService.Heartbeat:Wait()
+    end
+    teleporting = false
+    return true
+end
+
+-- Enhanced base detection
+local function findBestBase()
+    local plotsFolder = workspace:FindFirstChild('Plots')
+    if not plotsFolder then
+        warn('No Plots folder found')
+        return nil
+    end
+    local validBases = {}
+    for _, plot in pairs(plotsFolder:GetChildren()) do
+        pcall(function()
+            local plotSign = plot:FindFirstChild('PlotSign')
+            if not plotSign then
+                return
+            end
+            local plotSignText = plotSign:FindFirstChildWhichIsA(
+                'TextLabel',
+                true
+            )
+            if not plotSignText or plotSignText.ContentText == 'Empty Base' then
+                return
+            end
+            local yourBase = plotSign:FindFirstChild('YourBase')
+            if yourBase and yourBase.Enabled then
+                return
+            end
+            local podiums = plot:FindFirstChild('AnimalPodiums')
+            if not podiums then
+                return
+            end
+            for _, podium in pairs(podiums:GetChildren()) do
+                local base = podium:FindFirstChild('Base')
+                if base then
+                    local spawn = base:FindFirstChild('Spawn')
+                    if spawn then
+                        local distance =
+                            (spawn.Position - hrp.Position).Magnitude
+                        table.insert(
+                            validBases,
+                            { spawn = spawn, distance = distance, plot = plot }
+                        )
+                    end
+                end
+            end
+        end)
+    end
+    if #validBases == 0 then
+        warn('No valid bases found')
+        return nil
+    end
+    table.sort(validBases, function(a, b)
+        return a.distance < b.distance
+    end)
+    return validBases[1].spawn
+end
+
+-- STEALTH teleport sequence with chunked approach
+local function executeStealthTeleport(targetSpawn)
+    if not targetSpawn then
+        return false
+    end
+    local target = targetSpawn.CFrame * CFrame.new(0, 2, 0)
+    local alternateTarget = targetSpawn.CFrame * CFrame.new(0, 1.5, 0)
+    originalPosition = hrp.CFrame
+    StartDeathPrevention()
+    print('Phase 1: Stealth chunked teleports')
+    local chunks = math.ceil(currentTpAmount / tpSettings.chunkSize)
+    for chunk = 1, chunks do
+        local teleportsInChunk = math.min(
+            tpSettings.chunkSize,
+            currentTpAmount - ((chunk - 1) * tpSettings.chunkSize)
+        )
+        for i = 1, teleportsInChunk do
+            local randomizedTarget = target
+                * CFrame.new(
+                    random:NextNumber(-0.2, 0.2),
+                    random:NextNumber(-0.1, 0.1),
+                    random:NextNumber(-0.2, 0.2)
+                )
+            TP(randomizedTarget)
+            if i % 3 == 0 then
+                task.wait(tpSettings.stealthDelay)
+            end
+        end
+        if chunk < chunks then
+            task.wait(0.05)
+        end
+    end
+    print('Phase 2: Stealth void sequence')
+    local voidStartHealth = player.Character
+        and player.Character:FindFirstChild('Humanoid')
+        and player.Character.Humanoid.Health
+    for i = 1, tpSettings.voidTeleports do
+        local voidPos = getRandomVoidPosition()
+        TP(voidPos, true, true)
+        local humanoid = player.Character
+            and player.Character:FindFirstChild('Humanoid')
+        if
+            humanoid
+            and voidStartHealth
+            and humanoid.Health < voidStartHealth * 0.5
+        then
+            humanoid.Health = voidStartHealth
+            if emergencyPosition then
+                hrp.CFrame = emergencyPosition
+                task.wait(0.1)
+            end
+        end
+        task.wait(random:NextNumber(0.01, 0.03))
+        local safePos = target
+            * CFrame.new(
+                random:NextNumber(-5, 5),
+                random:NextNumber(0, 3),
+                random:NextNumber(-5, 5)
+            )
+        TP(safePos, true)
+        task.wait(0.01)
+    end
+    print('Phase 3: Precision positioning')
+    for i = 1, tpSettings.finalTeleports do
+        local finalTarget = target
+            * CFrame.new(
+                random:NextNumber(-0.3, 0.3),
+                random:NextNumber(-0.2, 0.2),
+                random:NextNumber(-0.3, 0.3)
+            )
+        TP(finalTarget)
+        if i % 2 == 0 then
+            TP(alternateTarget)
+        end
+        task.wait(0.01)
+    end
+    print('Phase 4: Final verification')
+    task.wait(0.1)
+    local currentPos = hrp.Position
+    if currentPos.Y <= -100 then
+        TP(emergencyPosition)
+        task.wait(0.2)
+        TP(target)
+        local humanoid = player.Character
+            and player.Character:FindFirstChild('Humanoid')
+        if humanoid and not characterRestored then
+            humanoid.Health = originalHealth
+            characterRestored = true
+        end
+    else
+        TP(target)
+    end
+    StopDeathPrevention()
+    return true
+end
+
+-- Main teleport function - SINGLE ATTEMPT ONLY
+local function TPNearestBase()
+    print('🔥 Starting STEALTH Enhanced Base Teleport')
+    hrp = getHRP()
+    if not hrp then
+        warn('Failed to get HumanoidRootPart')
+        return false
+    end
+    print('Single attempt teleport')
+    local targetSpawn = findBestBase()
+    if not targetSpawn then
+        warn('No target found')
+        return false
+    end
+    print('Target found:', targetSpawn.Parent.Parent.Name)
+    print(
+        'Distance:',
+        math.floor((targetSpawn.Position - hrp.Position).Magnitude)
+    )
+    print('Stealth teleport amount:', currentTpAmount)
+    if executeStealthTeleport(targetSpawn) then
+        print('✅ Stealth teleport sequence completed!')
+        task.wait(0.5)
+        local finalDistance = (targetSpawn.Position - hrp.Position).Magnitude
+        print('Final distance:', math.floor(finalDistance))
+        if finalDistance < 50 then
+            print('🎉 STEALTH SUCCESS! Inside base area')
+            return true
+        else
+            print('⚠️ Close but not inside - manual retry needed')
+            return false
+        end
+    else
+        warn('❌ Stealth teleport sequence failed')
+        return false
+    end
+end
+
+-- Enhanced execution with maximum stealth
+local function safeTeleport()
+    if
+        not player.Character
+        or not player.Character:FindFirstChild('HumanoidRootPart')
+        or not player.Character:FindFirstChild('Humanoid')
+    then
+        warn('Player not properly loaded')
+        return
+    end
+    local originalWalkSpeed = player.Character.Humanoid.WalkSpeed
+    local originalJumpPower = player.Character.Humanoid.JumpPower
+    player.Character.Humanoid.WalkSpeed = 0
+    player.Character.Humanoid.JumpPower = 0
+    player.Character.Humanoid.PlatformStand = true
+    local success = TPNearestBase()
+    task.wait(0.3)
+    player.Character.Humanoid.PlatformStand = false
+    task.wait(0.2)
+    player.Character.Humanoid.WalkSpeed = originalWalkSpeed
+    player.Character.Humanoid.JumpPower = originalJumpPower
+    if success then
+        print('🔥 STEALTH Enhanced teleport completed!')
+    else
+        warn('🚨 Stealth teleport failed - manual retry needed')
+    end
+end
+
+-- SAFETY ADDITION - Emergency reset function
+local function EmergencyReset()
+    if emergencyPosition then
+        hrp.CFrame = emergencyPosition
+        local humanoid = player.Character
+            and player.Character:FindFirstChild('Humanoid')
+        if humanoid then
+            humanoid.Health = originalHealth or 100
+        end
+        local char = player.Character
+        if char and not char.Parent then
+            player.CharacterAdded:Wait()
+            characterRestored = false
+        end
+    end
+end
+
+-- SAFETY ADDITION - Key binding for emergency reset
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then
+        return
+    end
+    if
+        input.KeyCode == Enum.KeyCode.R
+        and UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
+    then
+        EmergencyReset()
+    end
+end)
+
+-- Execute with enhanced safety delay
+task.wait(1)
+safeTeleport()
